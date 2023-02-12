@@ -1,3 +1,48 @@
+use argh::FromArgs;
+mod db;
+use db::DataBase as DB;
+use std::io::{Write, stdout, stdin};
+
+
+#[derive(FromArgs)]
+/// Rust SQL like database for CS 457
+struct Args {
+
+    /// open an interactive instance
+    #[argh(switch, short = 'i')]
+    interactive: bool,
+
+    /// a SQL file to run
+    #[argh(option, short = 'f')]
+    file: Option<String>,
+
+    /// a database to load or create
+    #[argh(option, short = 'd')]
+    database: Option<String>,
+}
+
 fn main() {
-    println!("Hello, world!");
+    let args: Args = argh::from_env();
+    let mut db = DB::new();
+    
+    match args.database {
+        Some(path) => {
+            //load db into mem
+        },
+        None => ()
+    }
+
+    match args.file {
+        Some(path) => {
+            db.sql_from_file(path.as_str());
+        },
+        None => ()
+    }
+
+    match args.interactive {
+        true => {
+            db.interactive();
+        },
+        false => ()
+    }
 }

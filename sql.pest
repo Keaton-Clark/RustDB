@@ -1,0 +1,42 @@
+// Atomics
+name = @{ (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")* }
+semicolon = @{ ";" }
+table = @{ ^"TABLE" }
+database = @{ ^"DATABASE" }
+add = @{ ^"ADD" }
+openParentheses = @{ "(" }
+closedParentheses = @{ ")" }
+comma = @{ "," }
+type = { int | char | varchar | float }
+int = @{ "int" }
+float = @{ "float" }
+char = { "char" ~ openParentheses ~ number ~ closedParentheses}
+varchar = { "varchar" ~ openParentheses ~ number ~ closedParentheses}
+number = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+from = @{ ^"FROM" }
+star = @{ "*" }
+listDef = { (openParentheses ~ columnDef ~ (comma ~ columnDef)* ~ closedParentheses) | columnDef }
+
+// Commands
+command = { ((drop | select | create | use | alter) ~ semicolon) | exit ~ NEWLINE? }
+// Alter
+alter = { ^"ALTER" ~ table ~ name ~ add ~ listDef}
+// Select
+select = { ^"SELECT" ~ selectExpression }
+selectExpression = _{ star ~ (from ~ name)? }
+// Create
+create = { ^"CREATE" ~ (createTable|createDatabase) }
+createTable = _{ table ~ name ~ listDef}
+createDatabase = _{ database ~ name }
+columnDef = { name ~ type }
+// Drop
+drop = { ^"DROP" ~ (table | database) ~ name }
+// Use
+use = { ^"USE" ~ name }
+// Exit
+exit = @{ ^".EXIT" }
+
+SQL = _{ SOI ~ command* ~ EOI }
+
+COMMENT = _{ "--" ~ (!NEWLINE ~ ANY)* }
+WHITESPACE = _{ " " | NEWLINE}

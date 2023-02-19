@@ -1,7 +1,6 @@
 use argh::FromArgs;
 mod db;
-use db::DataBase as DB;
-use std::io::{Write, stdout, stdin};
+use db::DBMS as DB;
 
 
 #[derive(FromArgs)]

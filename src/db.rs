@@ -1,124 +1,131 @@
-use std::collections::BTreeMap;
-use std::fs;
-use std::io::{Write, stdout, stdin};
+use pest::iterators::{Pair, Pairs};
 use pest::Parser;
-use pest::iterators::Pairs;
 use pest_derive::Parser;
+use std::collections::{BTreeMap, HashMap};
+use std::collections::VecDeque;
+use std::fs;
+use std::io::{stdin, stdout, Write};
 use std::marker::PhantomData;
+use std::process;
 
 #[derive(Parser)]
 #[grammar = "sql.pest"]
 struct SQLParser;
 
-pub struct DataBase {
-    error: Option<String>,
+pub struct DBMS {
+    error: Result<(), String>,
+    databases: HashMap<String, DataBase>,
+    curr_db: Option<String>,
 }
 
-impl DataBase {
+impl DBMS {
     const PROMPT: &str = " > ";
     pub fn new() -> Self {
-        DataBase {
-            error: None,
+        Self {
+            error: Ok(()),
+            databases: HashMap::new(),
+            curr_db: None,
         }
     }
     pub fn interactive(&mut self) {
         let mut line = String::new();
         loop {
-            stdout().write(DataBase::PROMPT.as_bytes()).unwrap();
+            stdout().write(DBMS::PROMPT.as_bytes()).unwrap();
             stdout().flush().unwrap();
             stdin().read_line(&mut line).unwrap();
-            self.parse(line.as_str());
             line.clear();
         }
     }
     pub fn sql_from_file(&mut self, path: &str) {
         match fs::read_to_string(path) {
-            Err(e) => println!("{}", e),
+            Err(e) => println!("Error reading from {}\n{}", path,  e),
             Ok(k) => {
-                self.parse(k.as_str());
+                match SQLParser::parse(Rule::SQL, &k) {
+                    Ok(k) => {
+                        for command in k {
+                            match self.run(command) {
+                                Ok(k) => println!("{k}"),
+                                Err(e) => println!("{e}")
+                            }
+                        }
+                    },
+                    Err(e) => println!("Error parsing {}\n{}", path, e)
+                }
             }
         }
     }
-    fn parse(&mut self, string: &str) {
-        match SQLParser::parse(Rule::SQL, string) {
-        Ok(k) => {
-                for line in k {
-                    println!("{:?}", line.as_span());
+    fn run(&mut self, command: Pair<Rule>) -> Result<String, String>{
+        match command.as_rule() {
+            Rule::create => {
+                let mut it = command.into_inner();
+                match it.next().unwrap().as_rule() {
+                    Rule::database => {
+                        let name = it.next().unwrap().as_str();
+                        if self.databases.contains_key(name) {
+                            Err(format!("!Failed to create database {} because it already exists.", name))
+                        } else {
+                            self.databases.insert(String::from(name), DataBase::new());
+                            Ok(format!("Database {} created.", name))
+                        }
+                    },
+                    Rule::table => {
+                        let name = it.next().unwrap().as_str();
+                        match self.curr_db {
+                            Some(db) => {
+                            },
+                            None => Err(format!("!No database supplied"))
+                        }
+                    },
+                    _ => Err(format!("An uknown parsing error happened on line: {}", line!()))
                 }
             },
-        Err(e) => {
-                println!("{e}");
+            Rule::drop => {
+                let mut it = command.into_inner();
+                match it.next().unwrap().as_rule() {
+                    Rule::database => {
+                        let name = it.next().unwrap().as_str();
+                        if self.databases.contains_key(name) {
+                            self.databases.remove(&String::from(name));
+                            Ok(format!("Database {} deleted.", name))
+                        } else {
+                            Err(format!("!Failed to delete database {} because it does not exist.", name))
+                        }
+                    },
+                    _ => Err(format!("An uknown parsing error happened on line: {}", line!()))
+                }
+            },
+            Rule::_use => {
+                let mut it = command.into_inner();
+                let name = it.next().unwrap().as_str();
+                if self.databases.contains_key(name) {
+                    self.curr_db = Some(String::from(name));
+                    Ok(format!("Using database {}.", name))
+                } else {
+                    Err(format!("!Cannot use database {} as it does not exist", name))
+                }
+            },
+            Rule::exit => {
+                process::exit(0);
             }
+            _ => Err(format!("Command \"{}\" was parsed but could not be ran", command.as_str()))
+        }
+    }
+    pub fn show_database(&self) {
+        for key in &self.databases {
+            println!("{}", key.0);
         }
     }
 }
-/*
-#[derive(Logos, Debug, PartialEq)]
-enum Token {
-    #[regex(r"\--(.*)", logos::skip, priority = 10)]
 
-    #[token(";", priority = 5)]
-    Semicolon,
+struct DataBase {
+    tables: HashMap<String, ()>,
+}
 
-    #[token(",", priority = 5)]
-    Comma,
+impl DataBase {
+    fn new() -> Self {
+        Self {
+            tables: HashMap::new()
+        }
+    }
+}
 
-    #[token("*", priority = 5)]
-    Star,
-
-    #[token("CREATE", priority = 5)]
-    Create,
-
-    #[token("USE", priority = 5)]
-    Use,
-
-    #[token("DROP", priority = 5)]
-    Drop,
-
-    #[token("TABLE", priority = 5)]
-    Table,
-
-    #[token("SELECT", priority = 5)]
-    Select,
-
-    #[token("FROM", priority = 5)]
-    From,
-
-    #[token(".EXIT", priority = 5)]
-    Exit,
-
-    #[token("int", priority = 5)]
-    Int,
-
-    #[token("float", priority = 5)]
-    Float,
-
-    #[token("char", priority = 5)]
-    Char,
-
-    #[token("varchar", priority = 5)]
-    Varchar,
-
-
-    #[token("(", priority = 5)]
-    OpenParenthesis,
-
-    #[token(")", priority = 5)]
-    CloseParenthesis,
-
-    #[token("DATABASE", priority = 5)]
-    Database,
-
-    #[token("ALTER", priority = 5)]
-    Alter,
-
-    #[regex(r"[a-zA-Z0-9_]+", priority = 3)]
-    Symbol,
-
-    #[regex(r"[0-9]+", priority = 4)]
-    Number,
-
-    #[error]
-    #[regex(r"[ \n]+", logos::skip, priority = 10)]
-    Error,
-}*/

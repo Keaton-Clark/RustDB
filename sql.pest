@@ -1,6 +1,6 @@
 // Atomics
 name = @{ (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")* }
-semicolon = @{ ";" }
+semicolon = _{ ";" }
 table = @{ ^"TABLE" }
 database = @{ ^"DATABASE" }
 add = @{ ^"ADD" }
@@ -18,7 +18,7 @@ star = @{ "*" }
 listDef = { (openParentheses ~ columnDef ~ (comma ~ columnDef)* ~ closedParentheses) | columnDef }
 
 // Commands
-command = { ((drop | select | create | use | alter) ~ semicolon) | exit ~ NEWLINE? }
+command = _{ ((drop | select | create | _use | alter) ~ semicolon) | exit ~ NEWLINE? }
 // Alter
 alter = { ^"ALTER" ~ table ~ name ~ add ~ listDef}
 // Select
@@ -32,11 +32,11 @@ columnDef = { name ~ type }
 // Drop
 drop = { ^"DROP" ~ (table | database) ~ name }
 // Use
-use = { ^"USE" ~ name }
+_use = { ^"USE" ~ name }
 // Exit
 exit = @{ ^".EXIT" }
 
 SQL = _{ SOI ~ command* ~ EOI }
 
-COMMENT = _{ "--" ~ (!NEWLINE ~ ANY)* }
-WHITESPACE = _{ " " | NEWLINE}
+COMMENT = _{ "--" ~ (!NEWLINE ~ ANY)*}
+WHITESPACE = _{ " " | NEWLINE }

@@ -1,13 +1,13 @@
 // Atomics
 name = @{ (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")* }
-semicolon = _{ ";" }
+semicolon = { ";" }
 table = @{ ^"TABLE" }
 database = @{ ^"DATABASE" }
 add = @{ ^"ADD" }
 openParentheses = @{ "(" }
 closedParentheses = @{ ")" }
 comma = @{ "," }
-type = { int | char | varchar | float }
+type = _{ int | char | varchar | float }
 int = @{ "int" }
 float = @{ "float" }
 char = { "char" ~ openParentheses ~ number ~ closedParentheses}

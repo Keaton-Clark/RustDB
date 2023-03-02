@@ -25,7 +25,7 @@ fn main() {
     let mut db = DB::new();
     
     match args.database {
-        Some(path) => {
+        Some(_path) => {
             //load db into mem
         },
         None => ()

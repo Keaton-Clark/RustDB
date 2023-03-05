@@ -5,22 +5,42 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{stdin, stdout, Write};
 use std::process;
+use serde::{Serialize, Deserialize};
 
 #[derive(Parser)]
 #[grammar = "sql.pest"]
 struct SQLParser;
 
+#[derive(Serialize, Deserialize)]
 pub struct DBMS {
     databases: HashMap<String, DataBase>,
     curr_db: Option<String>,
+    path: Option<String>,
 }
 
 impl DBMS {
     const PROMPT: &str = " > ";
-    pub fn new() -> Self {
-        Self {
-            databases: HashMap::new(),
-            curr_db: None,
+    pub fn new(path: Option<String>) -> Self {
+        match path {
+            None => {
+                Self {
+                    databases: HashMap::new(),
+                    curr_db: None,
+                    path,
+                }
+            }
+            Some(unwrapped_path) => {
+                match std::fs::read_to_string(unwrapped_path.as_str()) {
+                    Ok(file) => serde_json::from_str(file.as_str()).unwrap(),
+                    Err(_) => {
+                        Self {
+                            databases: HashMap::new(),
+                            curr_db: None,
+                            path: Some(unwrapped_path)
+                        }
+                    }
+                }
+            }
         }
     }
     pub fn interactive(&mut self) {
@@ -29,6 +49,23 @@ impl DBMS {
             stdout().write(DBMS::PROMPT.as_bytes()).unwrap();
             stdout().flush().unwrap();
             stdin().read_line(&mut line).unwrap();
+            match SQLParser::parse(Rule::SQL, &line) {
+                Ok(k) => {
+                    for command in k {
+                        match self.run(command) {
+                            Ok(k) => {
+                                match k {
+                                    Some(s) => println!("{}", s),
+                                    None => ()
+                                }
+                            }
+                            Err(e) => println!("{e}")
+                        }
+                    }
+                },
+                Err(e) => println!("Error parsing\n{}", e)
+            }
+            self.save();
             line.clear();
         }
     }
@@ -42,7 +79,10 @@ impl DBMS {
                             match self.run(command) {
                                 Ok(k) => {
                                     match k {
-                                        Some(s) => println!("{}", s),
+                                        Some(s) => {
+                                            println!("{}", s);
+                                            self.save();
+                                        },
                                         None => ()
                                     }
                                 }
@@ -164,8 +204,21 @@ impl DBMS {
             _ => Err(format!("Command \"{}\" was parsed but could not be ran", command.as_str()))
         }
     }
+
+    fn save(&mut self) {
+        match &self.path {
+            Some(path) => {
+                let mut f = std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(path).unwrap();
+                let ser = serde_json::to_string(&self).unwrap();
+                f.write_all(ser.as_bytes()).unwrap();
+                f.flush().unwrap();
+            },
+            None => ()
+        }
+    }
 }
 
+#[derive(Serialize,Deserialize)]
 struct DataBase {
     tables: HashMap<String, Table>,
 }
@@ -218,7 +271,7 @@ impl DataBase {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 enum SQLHeaderDef {
     Char(String, u32),
     Varchar(String, u32),
@@ -226,6 +279,7 @@ enum SQLHeaderDef {
     Int(String),
 }
 
+#[derive(Serialize, Deserialize)]
 struct Table {
     header: Vec<SQLHeaderDef>,
 }

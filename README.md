@@ -31,6 +31,15 @@ Options:
   -d, --database    a database to load or create
   --help            display usage information
 ```
+### Example
+For interactive:
+```
+./rust_db -i -d database_name
+```
+From sql:
+```
+./rust_db -d database_name -f ./src/PA1_test.sql
+```
 
 ## Design
 ### Parsing and Lexing
@@ -44,7 +53,9 @@ The database struct contains a hashmap of all the tables owned by that database.
 The table struct contains a vector of the header columns. The columns are represented by an enum that contains the relevant data for that column. E.g. SQLHeaderDef::Varchar has a string that is the name of the column and an integer that is the size of the field.
 
 ### Storage Design
+Rust has a handy library called serde which serializes and deserializes rust type. It stores the dbms and all databases and tables in JSON although I will change this to a binary format later.
 
+Currently it saves the entire dbms on every command but later I will impliment partial saves to reduce overhead.
 
 ## Rust explanation
 A fantastic free rust book can be found [here](https://doc.rust-lang.org/book/). Email me at keatonclark2@gmail.com if there is any confusion. In general rust is very similar to other Object-Oriented languages and you shouldn't have much trouble understanding the source code

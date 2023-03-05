@@ -22,14 +22,8 @@ struct Args {
 
 fn main() {
     let args: Args = argh::from_env();
-    let mut db = DB::new();
     
-    match args.database {
-        Some(_path) => {
-            //load db into mem
-        },
-        None => ()
-    }
+    let mut db = DB::new(args.database);
 
     match args.file {
         Some(path) => {

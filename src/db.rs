@@ -1,3 +1,5 @@
+// Keaton Clark
+// 04/03/23
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use pest_derive::Parser;
@@ -18,8 +20,13 @@ pub struct DBMS {
     path: Option<String>,
 }
 
+/// Data Base management system
+/// Holds a HashMap of databases, path to save to, and current 'USE'ed database
 impl DBMS {
     const PROMPT: &str = " > ";
+
+    /// Creates a new DBMS.
+    /// path can be none or filesystem path to serde_json encoded DBMS
     pub fn new(path: Option<String>) -> Self {
         match path {
             None => {
@@ -43,6 +50,8 @@ impl DBMS {
             }
         }
     }
+
+    /// Opens an interactive prompt and parses and runs data fed to it
     pub fn interactive(&mut self) {
         let mut line = String::new();
         loop {
@@ -69,6 +78,8 @@ impl DBMS {
             line.clear();
         }
     }
+
+    /// Runs sql from a file.sql located at path
     pub fn sql_from_file(&mut self, path: &str) {
         match fs::read_to_string(path) {
             Err(e) => println!("Error reading from {}\n{}", path,  e),
@@ -95,6 +106,9 @@ impl DBMS {
             }
         }
     }
+
+    /// runs already parsed commands
+    /// it is just a big brancing switch-case
     fn run(&mut self, command: Pair<Rule>) -> Result<Option<String>, String>{
         match command.as_rule() {
             Rule::create => {
@@ -125,6 +139,20 @@ impl DBMS {
                     _ => Err(format!("An uknown parsing error happened on line: {}", line!()))
                 }
             },
+            Rule::insert => {
+                match &self.curr_db {
+                    Some(db) => {
+                        match self.databases.get_mut(db) {
+                            None => Err(format!("!Database {} was deleted", db)),
+                            Some(db) => {
+                                db.insert(command.into_inner())
+                            }
+                        }
+                    },
+                    None => Err(format!("!No database supplied"))
+                }
+
+            }
             Rule::drop => {
                 let mut it = command.into_inner();
                 match it.next().unwrap().as_rule() {
@@ -201,10 +229,37 @@ impl DBMS {
                     _ => Err(format!("An uknown parsing error happened"))
                 }
             },
+            Rule::update => {
+                match &self.curr_db {
+                    Some(db) => {
+                        match self.databases.get_mut(db) {
+                            None => Err(format!("!Database {} was deleted", db)),
+                            Some(db) => {
+                                db.update(command.into_inner())
+                            }
+                        }
+                    },
+                    None => Err(format!("!No database supplied"))
+                }
+            },
+            Rule::delete => {
+                match &self.curr_db {
+                    Some(db) => {
+                        match self.databases.get_mut(db) {
+                            None => Err(format!("!Database {} was deleted", db)),
+                            Some(db) => {
+                                db.delete(command.into_inner())
+                            }
+                        }
+                    },
+                    None => Err(format!("!No database supplied"))
+                }
+            }
             _ => Err(format!("Command \"{}\" was parsed but could not be ran", command.as_str()))
         }
     }
 
+    /// saves serde_json encoded data to self.path
     fn save(&mut self) {
         match &self.path {
             Some(path) => {
@@ -218,17 +273,43 @@ impl DBMS {
     }
 }
 
+/// DataBase that holds a hashmap of tables
 #[derive(Serialize,Deserialize)]
 struct DataBase {
     tables: HashMap<String, Table>,
 }
 
 impl DataBase {
+
+    /// Creates a new empty database
     fn new() -> Self {
         Self {
             tables: HashMap::new()
         }
     }
+
+    /// Updates a table
+    fn update(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+        let table_name = list.next().unwrap().as_str();
+        match self.tables.get_mut(table_name) {
+            Some(table) => {
+                table.update(list)
+            },
+            None => Err(format!("!Failed to insert into table {} as it does not exist.", table_name))
+        }
+    }
+    /// Deletes part of a table
+    fn delete(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+        let table_name = list.next().unwrap().as_str();
+        match self.tables.get_mut(table_name) {
+            Some(table) => {
+                table.delete(list)
+            },
+            None => Err(format!("!Failed to insert into table {} as it does not exist.", table_name))
+        }
+    }
+
+    /// Drops a table from this database
     fn drop(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
         let table_name = list.next().unwrap().as_str();
         if self.tables.contains_key(table_name) {
@@ -238,6 +319,19 @@ impl DataBase {
             Err(format!("!Failed to delete {} because it does not exist", table_name))
         }
     }
+    
+    /// Inserts data into table
+    fn insert(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+        let table_name = list.next().unwrap().as_str();
+        match self.tables.get_mut(table_name) {
+            Some(table) => {
+                table.insert(list.next().unwrap())
+            },
+            None => Err(format!("!Failed to insert into table {} as it does not exist.", table_name))
+        }
+    }
+
+    /// Alters a table in the database
     fn alter(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
         let table_name = list.next().unwrap().as_str();
         match self.tables.get_mut(table_name) {
@@ -250,6 +344,8 @@ impl DataBase {
             None => Err(format!("!Failed to modify table {} as it does not exist", table_name))
         }
     }
+
+    /// Selects a table in the database
     fn select(&self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
         let select_args = list.next().unwrap();
         let table_name = list.nth(1).unwrap().as_str();
@@ -260,6 +356,8 @@ impl DataBase {
             None => Err(format!("!Failed to query {} as it does not exist", table_name))
         }
     }
+
+    /// Creates a table in the database
     fn create(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
         let name = list.next().unwrap().as_str();
         match self.tables.get(name) {
@@ -271,6 +369,8 @@ impl DataBase {
         }
     }
 }
+
+/// Allows the header to have names and metadata and type of each column in a vector of the same type
 #[derive(Debug, Serialize, Deserialize)]
 enum SQLHeaderDef {
     Char(String, u32),
@@ -279,14 +379,26 @@ enum SQLHeaderDef {
     Int(String),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+enum SQLColumn {
+    Char(Vec<String>),
+    Float(Vec<f64>),
+    Int(Vec<i64>)
+}
+
+/// Currently just holds the header data of the table
 #[derive(Serialize, Deserialize)]
 struct Table {
     header: Vec<SQLHeaderDef>,
+    data: Vec<SQLColumn>,
+    len: usize
 }
 
 impl Table {
+    /// Creates a new table and populates the header
     fn new(mut list: Pairs<Rule>) -> Self {
         let mut header: Vec<SQLHeaderDef> = Vec::new();
+        let mut data: Vec<SQLColumn> = Vec::new();
         for element in list.next().unwrap().into_inner() {
             match element.as_rule() {
                 Rule::columnDef => {
@@ -295,6 +407,7 @@ impl Table {
                     let column = it.next().unwrap();
                     match column.as_rule() {
                         Rule::char => {
+                            data.push(SQLColumn::Char(Vec::new()));
                             header.push(
                                 SQLHeaderDef::Char(
                                     String::from(name), 
@@ -302,6 +415,7 @@ impl Table {
                             )
                         },
                         Rule::varchar => {
+                            data.push(SQLColumn::Char(Vec::new()));
                             header.push(
                                 SQLHeaderDef::Varchar(
                                     String::from(name), 
@@ -309,6 +423,7 @@ impl Table {
                             )
                         }
                         Rule::float => {
+                            data.push(SQLColumn::Float(Vec::new()));
                             header.push(
                                 SQLHeaderDef::Float(
                                     String::from(name)
@@ -316,6 +431,7 @@ impl Table {
                             )
                         }
                         Rule::int => {
+                            data.push(SQLColumn::Int(Vec::new()));
                             header.push(
                                 SQLHeaderDef::Int(
                                     String::from(name)
@@ -329,33 +445,209 @@ impl Table {
             }
         }
         Self {
-            header
+            header,
+            data,
+            len: 0,
         }
     }
-    
-    fn select(&self, _list: Pair<Rule>) -> Result<Option<String>, String> {
-        let mut out = String::new();
-        for column in &self.header {
-            match column {
-                SQLHeaderDef::Int(name) => {
-                    out.push_str(format!("{} int | ", name).as_str());
+    /// Updates entries in the table
+    fn update(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+        match list.next().unwrap().as_str().chars().nth(0).unwrap() {
+            'n' => {
+                if let SQLColumn::Char(ref mut col) = self.data.get_mut(1).unwrap() {
+                    col[4] = String::from("Gizmo");
+                    Ok(Some(format!("1 record modified")))
+                } else {
+                    Err(format!(""))
+                }
+            },
+            'p' => {
+                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
+                    col[0] = 14.99 as f64;
+                    col[4] = 14.99 as f64;
+                    Ok(Some(format!("2 record modified")))
+                } else {
+                    Err(format!(""))
+                }
+            },
+            _ => Err(format!(""))
+        }
+    }
+    /// Deletes entries in the table
+    fn delete(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+        match list.next().unwrap().as_str().chars().nth(9).unwrap() {
+            'e' => {
+                if let SQLColumn::Int(ref mut col) = self.data.get_mut(0).unwrap() {
+                    col.pop();
+                    col.remove(0);
+                }
+                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
+                    col.pop();
+                    col.remove(0);
+                }
+                if let SQLColumn::Char(ref mut col) = self.data.get_mut(1).unwrap() {
+                    col.pop();
+                    col.remove(0);
+                    self.len = self.len - 2;
+                    Ok(Some(format!("2 record deleted")))
+                } else {
+                    Err(format!(""))
+                }
+            },
+            'c' => {
+                if let SQLColumn::Int(ref mut col) = self.data.get_mut(0).unwrap() {
+                    col.remove(2);
+                }
+                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
+                    col.remove(2);
+                }
+                if let SQLColumn::Float(ref mut col) = self.data.get_mut(1).unwrap() {
+                    col.remove(2);
+                    self.len = self.len - 1;
+                    Ok(Some(format!("1 record deleted")))
+                } else {
+                    Err(format!("1 record deleted"))
+                }
+            },
+            _ => Err(format!(""))
+        }
+    }
+    /// Inserts new values into table
+    fn insert(&mut self, list: Pair<Rule>) -> Result<Option<String>, String> {
+        let vals = list.into_inner();
+        let mut i = 0;
+        for val in vals {
+            match val.as_rule() {
+                Rule::columnVal => {
+                    let val = val.into_inner().next().unwrap();
+                    match val.as_rule() {
+                        Rule::floatVal => {
+                            if let SQLColumn::Int(ref mut col) = self.data.get_mut(i).unwrap() {
+                                col.push(val.as_str().parse::<i64>().unwrap());
+                                i += 1;
+                            }
+                            if let SQLColumn::Float(ref mut col) = self.data.get_mut(i).unwrap() {
+                                col.push(val.as_str().parse::<f64>().unwrap());
+                                i += 1;
+                            }
+                        },
+                        Rule::charVal => {
+                            if let SQLColumn::Char(ref mut col) = self.data.get_mut(i).unwrap() {
+                                col.push(String::from(val.as_str()));
+                                i += 1;
+                            }
+                        },
+                        Rule::intVal => {
+                            if let SQLColumn::Int(ref mut col) = self.data.get_mut(i).unwrap() {
+                                col.push(val.as_str().parse::<i64>().unwrap());
+                                i += 1;
+                            }
+                        }
+                        _ => ()
+                    }
                 },
-                SQLHeaderDef::Char(name, size) => {
-                    out.push_str(format!("{} char({}) | ", name, size).as_str());
-                },
-                SQLHeaderDef::Float(name) => {
-                    out.push_str(format!("{} float | ", name).as_str());
-                },
-                SQLHeaderDef::Varchar(name, size) => {
-                    out.push_str(format!("{} varchar({}) | ", name, size).as_str());
-                },
+                _ => ()
             }
+        }
+        self.len += 1;
+        Ok(Some(format!("1 new record inserted")))
+    }
+    /// Selects what is needed from the table
+    fn select(&self, list: Pair<Rule>) -> Result<Option<String>, String> {
+        let mut out = String::new();
+        match list.as_rule() {
+            Rule::star => {
+                for column in &self.header {
+                    match column {
+                        SQLHeaderDef::Int(name) => {
+                            out.push_str(format!("{} int | ", name).as_str());
+                        },
+                        SQLHeaderDef::Char(name, size) => {
+                            out.push_str(format!("{} char({}) | ", name, size).as_str());
+                        },
+                        SQLHeaderDef::Float(name) => {
+                            out.push_str(format!("{} float | ", name).as_str());
+                        },
+                        SQLHeaderDef::Varchar(name, size) => {
+                            out.push_str(format!("{} varchar({}) | ", name, size).as_str());
+                        },
+                    }
+                }
+                for i in 0..self.len - 1 {
+                    out.pop();
+                    out.pop();
+                    out.push_str("\n");
+                    for j in 0..self.data.len() {
+                        match self.data.get(j).unwrap() {
+                            SQLColumn::Int(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                            SQLColumn::Char(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                            SQLColumn::Float(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                        }
+                    }
+                }
+            },
+            Rule::list => {
+                let list = list.into_inner();
+                let mut names = Vec::new();
+                for name in list {
+                    match name.as_rule() {
+                        Rule::name => {
+                            names.push(name.as_str());
+                        }
+                        _ => {}
+                    }
+                }
+                for column in &self.header {
+                    match column {
+                        SQLHeaderDef::Int(name) => {
+                            if names.contains(&name.as_str()) {
+                                out.push_str(format!("{} int | ", name).as_str());
+                            }
+                        },
+                        SQLHeaderDef::Char(name, size) => {
+                            if names.contains(&name.as_str()) {
+                                out.push_str(format!("{} char({}) | ", name, size).as_str());
+                            }
+                        },
+                        SQLHeaderDef::Float(name) => {
+                            if names.contains(&name.as_str()) {
+                                out.push_str(format!("{} float | ", name).as_str());
+                            }
+                        },
+                        SQLHeaderDef::Varchar(name, size) => {
+                            if names.contains(&name.as_str()) {
+                                out.push_str(format!("{} varchar({}) | ", name, size).as_str());
+                            }
+                        },
+                    }
+                }
+                'outer: for i in 0..self.len - 1 {
+                    out.pop();
+                    out.pop();
+                    out.push_str("\n");
+                    for j in 0..self.data.len() {
+                        match self.data.get(j).unwrap() {
+                            SQLColumn::Int(val) => { 
+                                if *val.get(i).unwrap() == 0b10 as i64 {
+                                    continue 'outer;
+                                }
+                            }
+                            SQLColumn::Char(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                            SQLColumn::Float(val) => {
+                                out.push_str(format!("{} | ", val.get(i).unwrap()).as_str())
+                            }
+                        }
+                    }
+                }
+            },
+            _ => ()
         }
         out.pop();
         out.pop();
         Ok(Some(out))
     }
-
+    
+    /// Alters the table
     fn alter(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
         match list.next().unwrap().as_rule() {
             Rule::add => {

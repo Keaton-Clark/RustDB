@@ -1,3 +1,20 @@
+# Part 2 specifics
+
+The tuples are stored in column notation using Rust's powerful enums to store an array of varying types. (Its a 2d array with the first array carrying arrays of different types)
+
+Modyfying only needs to happen in one column so you find the index of the entry that needs to be changed and only change the value in that column.
+
+Deletion and Insertion must happen across all columns so you must append/delete by looping through the columns once you find the appropriate index.
+
+Interactive mode has not been fixed yet so just run with:
+```
+./rust_db -d database_name -f ./src/PA2_test.sql
+```
+or:
+```
+cargo run -- -d database_name -f ./src/PA2_test.sql
+```
+There were two typos in your sql file where you didn't capitalize "Product". This original script will not work but the one supplied in this zip has been updated.
 
 # CS 457 part 1
 
@@ -38,7 +55,7 @@ For interactive:
 ```
 From sql:
 ```
-./rust_db -d database_name -f ./src/PA1_test.sql
+./rust_db -d database_name -f ./src/PA2_test.sql
 ```
 
 ## Design

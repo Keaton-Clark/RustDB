@@ -13,17 +13,31 @@ float = @{ "float" }
 char = { "char" ~ openParentheses ~ number ~ closedParentheses}
 varchar = { "varchar" ~ openParentheses ~ number ~ closedParentheses}
 number = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+intVal = { ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+charVal = { (!("'") ~ ANY)* }
+floatVal = { (ASCII_DIGIT* ~ "." ~ ASCII_DIGIT+) | ASCII_DIGIT+ }
 from = @{ ^"FROM" }
 star = @{ "*" }
+list = { (name ~ comma)* ~ name }
 listDef = { (openParentheses ~ columnDef ~ (comma ~ columnDef)* ~ closedParentheses) | columnDef }
+columnVal = { floatVal | ( "'" ~ charVal ~ "'" ) | intVal }
+listVal = { (openParentheses ~ columnVal ~ (comma ~ columnVal)* ~ closedParentheses) | columnVal }
+
+// Where
+compare = { "!=" | "=" | "<=" | ">=" | ">" | "<" }
+where = { ^"WHERE" ~ name ~ compare ~ columnVal}
 
 // Commands
-command = _{ ((drop | select | create | _use | alter) ~ semicolon) | exit ~ NEWLINE? }
+command = _{ ((drop | select | create | _use | alter | insert | update | delete) ~ semicolon) | exit ~ NEWLINE? }
 // Alter
+// Update
+update = { ^"UPDATE" ~ name ~ ^"SET" ~ name ~ "=" ~ columnVal ~ where}
 alter = { ^"ALTER" ~ table ~ name ~ add ~ listDef}
+// Insert
+insert = { ^"INSERT into" ~ name ~ ^"VALUES" ~ listVal }
 // Select
 select = { ^"SELECT" ~ selectExpression }
-selectExpression = _{ star ~ (from ~ name)? }
+selectExpression = _{ (star | list) ~ (from ~ name ~ where? )? }
 // Create
 create = { ^"CREATE" ~ (createTable|createDatabase) }
 createTable = _{ table ~ name ~ listDef}
@@ -33,10 +47,12 @@ columnDef = { name ~ type }
 drop = { ^"DROP" ~ (table | database) ~ name }
 // Use
 _use = { ^"USE" ~ name }
+// Delete
+delete = { ^"DELETE FROM" ~ name ~ where}
 // Exit
 exit = @{ ^".EXIT" }
 
 SQL = _{ SOI ~ command* ~ EOI }
 
 COMMENT = _{ "--" ~ (!NEWLINE ~ ANY)*}
-WHITESPACE = _{ " " | NEWLINE }
+WHITESPACE = _{ "\t" | " " | NEWLINE }

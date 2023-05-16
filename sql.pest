@@ -28,11 +28,13 @@ compare = { "!=" | "=" | "<=" | ">=" | ">" | "<" }
 where = { ^"WHERE" ~ name ~ compare ~ columnVal}
 
 // Commands
-command = _{ ((drop | select | create | _use | alter | insert | update | delete) ~ semicolon) | exit ~ NEWLINE? }
+command = _{ ((drop | select | create | _use | alter | insert | update | delete | begin | commit) ~ semicolon) | exit ~ NEWLINE? }
 // Alter
 // Update
 update = { ^"UPDATE" ~ name ~ ^"SET" ~ name ~ "=" ~ columnVal ~ where}
 alter = { ^"ALTER" ~ table ~ name ~ add ~ listDef}
+begin = { ^"BEGIN TRANSACTION" }
+commit = { ^"COMMIT" }
 // Insert
 insert = { ^"INSERT into" ~ name ~ ^"VALUES" ~ listVal }
 // Select

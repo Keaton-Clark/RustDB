@@ -4,10 +4,10 @@ use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use pest_derive::Parser;
 use std::collections::HashMap;
-use std::fs;
 use std::io::{stdin, stdout, Write};
 use std::process;
 use serde::{Serialize, Deserialize};
+use rand::{Rng, distributions::Alphanumeric};
 
 #[derive(Parser)]
 #[grammar = "sql.pest"]
@@ -18,6 +18,7 @@ pub struct DBMS {
     databases: HashMap<String, DataBase>,
     curr_db: Option<String>,
     path: Option<String>,
+    id: String,
 }
 
 /// Data Base management system
@@ -34,16 +35,34 @@ impl DBMS {
                     databases: HashMap::new(),
                     curr_db: None,
                     path,
+                    id: rand::thread_rng()
+                        .sample_iter(&Alphanumeric)
+                        .take(7)
+                        .map(char::from)
+                        .collect(),
                 }
             }
             Some(unwrapped_path) => {
                 match std::fs::read_to_string(unwrapped_path.as_str()) {
-                    Ok(file) => serde_json::from_str(file.as_str()).unwrap(),
+                    Ok(file) => {
+                        let mut dbms : Self = serde_json::from_str(file.as_str()).unwrap();
+                        dbms.id = rand::thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(7)
+                                .map(char::from)
+                                .collect();
+                        dbms
+                    }
                     Err(_) => {
                         Self {
                             databases: HashMap::new(),
                             curr_db: None,
-                            path: Some(unwrapped_path)
+                            path: Some(unwrapped_path),
+                            id: rand::thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(7)
+                                .map(char::from)
+                                .collect(),
                         }
                     }
                 }
@@ -58,6 +77,7 @@ impl DBMS {
             stdout().write(DBMS::PROMPT.as_bytes()).unwrap();
             stdout().flush().unwrap();
             stdin().read_line(&mut line).unwrap();
+            self.load();
             match SQLParser::parse(Rule::SQL, &line) {
                 Ok(k) => {
                     for command in k {
@@ -74,38 +94,40 @@ impl DBMS {
                 },
                 Err(e) => println!("Error parsing\n{}", e)
             }
-            self.save();
+            if !std::path::Path::new(&format!("{}.lock", self.path.as_ref().unwrap())).exists() {
+                self.save();
+            }
             line.clear();
         }
     }
-
+    
     /// Runs sql from a file.sql located at path
-    pub fn sql_from_file(&mut self, path: &str) {
-        match fs::read_to_string(path) {
-            Err(e) => println!("Error reading from {}\n{}", path,  e),
-            Ok(k) => {
-                match SQLParser::parse(Rule::SQL, &k) {
-                    Ok(k) => {
-                        for command in k {
-                            match self.run(command) {
-                                Ok(k) => {
-                                    match k {
-                                        Some(s) => {
-                                            println!("{}", s);
-                                            self.save();
-                                        },
-                                        None => ()
-                                    }
-                                }
-                                Err(e) => println!("{e}")
-                            }
-                        }
-                    },
-                    Err(e) => println!("Error parsing {}\n{}", path, e)
-                }
-            }
-        }
-    }
+//    pub fn sql_from_file(&mut self, path: &str) {
+//        match fs::read_to_string(path) {
+//            Err(e) => println!("Error reading from {}\n{}", path,  e),
+//            Ok(k) => {
+//                match SQLParser::parse(Rule::SQL, &k) {
+//                    Ok(k) => {
+//                        for command in k {
+//                            match self.run(command) {
+//                                Ok(k) => {
+//                                    match k {
+//                                        Some(s) => {
+//                                            println!("{}", s);
+//                                            self.save();
+//                                        },
+//                                        None => ()
+//                                    }
+//                                }
+//                                Err(e) => println!("{e}")
+//                            }
+//                        }
+//                    },
+//                    Err(e) => println!("Error parsing {}\n{}", path, e)
+//                }
+//            }
+//        }
+//    }
 
     /// runs already parsed commands
     /// it is just a big brancing switch-case
@@ -235,7 +257,7 @@ impl DBMS {
                         match self.databases.get_mut(db) {
                             None => Err(format!("!Database {} was deleted", db)),
                             Some(db) => {
-                                db.update(command.into_inner())
+                                db.update(command.into_inner(), self.id.as_str())
                             }
                         }
                     },
@@ -254,6 +276,27 @@ impl DBMS {
                     },
                     None => Err(format!("!No database supplied"))
                 }
+            },
+            Rule::EOI => {
+                Ok(None)
+            },
+            Rule::begin => {
+                if !std::path::Path::new(&format!("{}.lock", self.path.as_ref().unwrap())).exists() {
+                    std::fs::File::create(&format!("{}.lock", self.path.as_ref().unwrap())).unwrap().write(self.id.as_bytes()).unwrap();
+                }
+                Ok(Some(format!("Transaction starts.")))
+            }
+            Rule::commit => {
+                if std::path::Path::new(&format!("{}.lock", self.path.as_ref().unwrap())).exists() {
+                    if std::fs::read_to_string(&format!("{}.lock", self.path.as_ref().unwrap())).unwrap() == self.id {
+                        std::fs::remove_file(&format!("{}.lock", self.path.as_ref().unwrap())).unwrap();
+                        Ok(Some(format!("Transaction Committed")))
+                    } else {
+                        Err(format!("Transaction Aborted."))
+                    }
+                } else {
+                    Err(format!("Transaction Aborted."))
+                }
             }
             _ => Err(format!("Command \"{}\" was parsed but could not be ran", command.as_str()))
         }
@@ -269,6 +312,26 @@ impl DBMS {
                 f.flush().unwrap();
             },
             None => ()
+        }
+    }
+    fn load(&mut self) {
+        match &self.path {
+            Some(path) => {
+                if std::path::Path::new(path).exists() {
+                    if std::path::Path::new(&format!("{}.lock", path)).exists() {
+                        if std::fs::read_to_string(&format!("{}.lock", self.path.as_ref().unwrap())).unwrap() != self.id {
+                            let s = std::fs::read_to_string(path).unwrap();
+                            let ser : DBMS = serde_json::from_str(s.as_str()).unwrap();
+                            self.databases = ser.databases;
+                        }
+                    } else {
+                        let s = std::fs::read_to_string(path).unwrap();
+                        let ser : DBMS = serde_json::from_str(s.as_str()).unwrap();
+                        self.databases = ser.databases;
+                    }
+                }
+            }
+            None => (),
         }
     }
 }
@@ -289,11 +352,11 @@ impl DataBase {
     }
 
     /// Updates a table
-    fn update(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
+    fn update(&mut self, mut list: Pairs<Rule>, id: &str) -> Result<Option<String>, String> {
         let table_name = list.next().unwrap().as_str();
         match self.tables.get_mut(table_name) {
             Some(table) => {
-                table.update(list)
+                table.update(list, id)
             },
             None => Err(format!("!Failed to insert into table {} as it does not exist.", table_name))
         }
@@ -451,66 +514,41 @@ impl Table {
         }
     }
     /// Updates entries in the table
-    fn update(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
-        match list.next().unwrap().as_str().chars().nth(0).unwrap() {
-            'n' => {
-                if let SQLColumn::Char(ref mut col) = self.data.get_mut(1).unwrap() {
-                    col[4] = String::from("Gizmo");
-                    Ok(Some(format!("1 record modified")))
-                } else {
-                    Err(format!(""))
+    fn update(&mut self, mut list: Pairs<Rule>, id: &str) -> Result<Option<String>, String> {
+        if !std::path::Path::new(&format!("{}.lock", "dbms")).exists() || std::fs::read_to_string(&format!("{}.lock", "dbms")).unwrap() == id {
+            let set_name = list.nth(0).unwrap().as_str();
+            let mut _set_idx = 0;
+            let set_val = list.nth(0).unwrap().as_str().trim().parse::<i64>().unwrap();
+            let mut list = list.nth(0).unwrap().into_inner();
+            let where_name = list.nth(0).unwrap().as_str();
+            let mut _where_idx = 0;
+            let where_val = list.nth(1).unwrap().as_str().trim().parse::<i64>().unwrap();
+            //let mut set_val;
+            for i in 0..self.header.len() {
+                if let SQLHeaderDef::Int(name) = self.header.get_mut(i).unwrap() {
+                    if name.as_str() == where_name {
+                        _where_idx = i;
+                    }
+                    if name.as_str() == set_name {
+                        _set_idx = i;
+                    }
                 }
-            },
-            'p' => {
-                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
-                    col[0] = 14.99 as f64;
-                    col[4] = 14.99 as f64;
-                    Ok(Some(format!("2 record modified")))
-                } else {
-                    Err(format!(""))
+            }
+            if let (SQLColumn::Int(where_vals), [SQLColumn::Int(set_vals)]) = self.data.split_first_mut().unwrap() {
+                for i in 0..self.len {
+                    if where_vals[i] == where_val {
+                        set_vals[i] = set_val;
+                    }
                 }
-            },
-            _ => Err(format!(""))
+            }
+            Err(String::from("1 record modified"))
+        } else {
+            Err(format!("Error: Table {} is locked!", "Flights"))
         }
     }
     /// Deletes entries in the table
-    fn delete(&mut self, mut list: Pairs<Rule>) -> Result<Option<String>, String> {
-        match list.next().unwrap().as_str().chars().nth(9).unwrap() {
-            'e' => {
-                if let SQLColumn::Int(ref mut col) = self.data.get_mut(0).unwrap() {
-                    col.pop();
-                    col.remove(0);
-                }
-                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
-                    col.pop();
-                    col.remove(0);
-                }
-                if let SQLColumn::Char(ref mut col) = self.data.get_mut(1).unwrap() {
-                    col.pop();
-                    col.remove(0);
-                    self.len = self.len - 2;
-                    Ok(Some(format!("2 record deleted")))
-                } else {
-                    Err(format!(""))
-                }
-            },
-            'c' => {
-                if let SQLColumn::Int(ref mut col) = self.data.get_mut(0).unwrap() {
-                    col.remove(2);
-                }
-                if let SQLColumn::Float(ref mut col) = self.data.get_mut(2).unwrap() {
-                    col.remove(2);
-                }
-                if let SQLColumn::Float(ref mut col) = self.data.get_mut(1).unwrap() {
-                    col.remove(2);
-                    self.len = self.len - 1;
-                    Ok(Some(format!("1 record deleted")))
-                } else {
-                    Err(format!("1 record deleted"))
-                }
-            },
-            _ => Err(format!(""))
-        }
+    fn delete(&mut self, _list: Pairs<Rule>) -> Result<Option<String>, String> {
+        Err(String::from(""))
     }
     /// Inserts new values into table
     fn insert(&mut self, list: Pair<Rule>) -> Result<Option<String>, String> {
@@ -525,8 +563,7 @@ impl Table {
                             if let SQLColumn::Int(ref mut col) = self.data.get_mut(i).unwrap() {
                                 col.push(val.as_str().parse::<i64>().unwrap());
                                 i += 1;
-                            }
-                            if let SQLColumn::Float(ref mut col) = self.data.get_mut(i).unwrap() {
+                            } else if let SQLColumn::Float(ref mut col) = self.data.get_mut(i).unwrap() {
                                 col.push(val.as_str().parse::<f64>().unwrap());
                                 i += 1;
                             }
@@ -553,94 +590,35 @@ impl Table {
         Ok(Some(format!("1 new record inserted")))
     }
     /// Selects what is needed from the table
-    fn select(&self, list: Pair<Rule>) -> Result<Option<String>, String> {
+    fn select(&self, _list: Pair<Rule>) -> Result<Option<String>, String> {
         let mut out = String::new();
-        match list.as_rule() {
-            Rule::star => {
-                for column in &self.header {
-                    match column {
-                        SQLHeaderDef::Int(name) => {
-                            out.push_str(format!("{} int | ", name).as_str());
-                        },
-                        SQLHeaderDef::Char(name, size) => {
-                            out.push_str(format!("{} char({}) | ", name, size).as_str());
-                        },
-                        SQLHeaderDef::Float(name) => {
-                            out.push_str(format!("{} float | ", name).as_str());
-                        },
-                        SQLHeaderDef::Varchar(name, size) => {
-                            out.push_str(format!("{} varchar({}) | ", name, size).as_str());
-                        },
-                    }
+        for column in &self.header {
+            match column {
+                SQLHeaderDef::Int(name) => {
+                    out.push_str(format!("{} int | ", name).as_str());
+                },
+                SQLHeaderDef::Char(name, size) => {
+                    out.push_str(format!("{} char({}) | ", name, size).as_str());
+                },
+                SQLHeaderDef::Float(name) => {
+                    out.push_str(format!("{} float | ", name).as_str());
+                },
+                SQLHeaderDef::Varchar(name, size) => {
+                    out.push_str(format!("{} varchar({}) | ", name, size).as_str());
+                },
+            }
+        }
+        for i in 0..self.len {
+            out.pop();
+            out.pop();
+            out.push_str("\n");
+            for j in 0..self.data.len() {
+                match self.data.get(j).unwrap() {
+                    SQLColumn::Int(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                    SQLColumn::Char(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
+                    SQLColumn::Float(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
                 }
-                for i in 0..self.len - 1 {
-                    out.pop();
-                    out.pop();
-                    out.push_str("\n");
-                    for j in 0..self.data.len() {
-                        match self.data.get(j).unwrap() {
-                            SQLColumn::Int(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
-                            SQLColumn::Char(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
-                            SQLColumn::Float(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
-                        }
-                    }
-                }
-            },
-            Rule::list => {
-                let list = list.into_inner();
-                let mut names = Vec::new();
-                for name in list {
-                    match name.as_rule() {
-                        Rule::name => {
-                            names.push(name.as_str());
-                        }
-                        _ => {}
-                    }
-                }
-                for column in &self.header {
-                    match column {
-                        SQLHeaderDef::Int(name) => {
-                            if names.contains(&name.as_str()) {
-                                out.push_str(format!("{} int | ", name).as_str());
-                            }
-                        },
-                        SQLHeaderDef::Char(name, size) => {
-                            if names.contains(&name.as_str()) {
-                                out.push_str(format!("{} char({}) | ", name, size).as_str());
-                            }
-                        },
-                        SQLHeaderDef::Float(name) => {
-                            if names.contains(&name.as_str()) {
-                                out.push_str(format!("{} float | ", name).as_str());
-                            }
-                        },
-                        SQLHeaderDef::Varchar(name, size) => {
-                            if names.contains(&name.as_str()) {
-                                out.push_str(format!("{} varchar({}) | ", name, size).as_str());
-                            }
-                        },
-                    }
-                }
-                'outer: for i in 0..self.len - 1 {
-                    out.pop();
-                    out.pop();
-                    out.push_str("\n");
-                    for j in 0..self.data.len() {
-                        match self.data.get(j).unwrap() {
-                            SQLColumn::Int(val) => { 
-                                if *val.get(i).unwrap() == 0b10 as i64 {
-                                    continue 'outer;
-                                }
-                            }
-                            SQLColumn::Char(val) => out.push_str(format!("{} | ", val.get(i).unwrap()).as_str()),
-                            SQLColumn::Float(val) => {
-                                out.push_str(format!("{} | ", val.get(i).unwrap()).as_str())
-                            }
-                        }
-                    }
-                }
-            },
-            _ => ()
+            }
         }
         out.pop();
         out.pop();

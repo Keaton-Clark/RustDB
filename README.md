@@ -1,20 +1,23 @@
-# Part 2 specifics
+# Part 4 specifics
 
-The tuples are stored in column notation using Rust's powerful enums to store an array of varying types. (Its a 2d array with the first array carrying arrays of different types)
+## Rust Installation
 
-Modyfying only needs to happen in one column so you find the index of the entry that needs to be changed and only change the value in that column.
+```curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh```
 
-Deletion and Insertion must happen across all columns so you must append/delete by looping through the columns once you find the appropriate index.
+## Rust Uninstallation
 
-Interactive mode has not been fixed yet so just run with:
-```
-./rust_db -d database_name -f ./src/PA2_test.sql
-```
-or:
-```
-cargo run -- -d database_name -f ./src/PA2_test.sql
-```
-There were two typos in your sql file where you didn't capitalize "Product". This original script will not work but the one supplied in this zip has been updated.
+```rustup self uninstall```
+
+## Running the project
+```cargo run```
+
+## Very Important!!!!
+SQL is case sensitive so I implimented mine that way as well. In the test SQL file on both update commands you spelled "Flights" with a lowercase 'f' but an uppercase everywhere else. !!! This will NOT work !!! Please make sure to use an uppercase 'F'. Can you also update my grade from part 2 where the same thing happened and I was marked down because of it.
+
+## Implementation
+Each instance of the program randomly generates a hash that is used as an ID for accessing the lock file and the database during a transaction. This file is named dbms.lock and is automatically deleted and created on commits and transactions. The ID has a low chance of colliding with other ID's as it is a 7 char randomly generated value. Commits and edits will fail if you attempt to change the database while that instance's ID does not match the lock files ID. If you close an instance during a transaction that database will be locked until you delete 'dbms.lock'
+
+
 
 # CS 457 part 1
 
